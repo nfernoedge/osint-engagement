@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OSINT Engagement Log</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header {
+      border-left: 4px solid #f78166;
+      padding-left: 1rem;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    header h1 { font-size: 1.5rem; color: #f0f6fc; letter-spacing: 0.05em; }
+    header p  { font-size: 0.8rem; color: #8b949e; margin-top: 0.25rem; text-transform: uppercase; letter-spacing: 0.1em; }
+
+    .btn-config {
+      background: none;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 0.78rem;
+      padding: 0.4rem 0.8rem;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-config:hover { border-color: #6e7681; color: #c9d1d9; }
+
+    /* ── Config modal ── */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 1.75rem;
+      width: 100%;
+      max-width: 480px;
+    }
+    .modal h2 { font-size: 1rem; color: #f0f6fc; margin-bottom: 1.25rem; }
+    .modal-note {
+      font-size: 0.78rem;
+      color: #8b949e;
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 1.25rem;
+      line-height: 1.55;
+    }
+    .modal-note a { color: #58a6ff; }
+    .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem; }
+
+    /* ── Status bar ── */
+    #status-bar {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      margin-bottom: 1.5rem;
+      padding: 0.6rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.ok      { background: #3fb950; }
+    .status-dot.warn    { background: #d29922; }
+    .status-dot.error   { background: #f78166; }
+    #status-text { color: #8b949e; }
+
+    /* ── Form sections ── */
+    .section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #8b949e;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+    .field { display: flex; flex-direction: column; gap: 0.4rem; }
+
+    label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    input[type="text"],
+    input[type="datetime-local"],
+    input[type="password"],
+    textarea {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 0.9rem;
+      padding: 0.6rem 0.75rem;
+      width: 100%;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #58a6ff;
+      box-shadow: 0 0 0 3px rgba(88,166,255,0.1);
+    }
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
+    textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+
+    /* ── Prompt entries ── */
+    #prompt-list { display: flex; flex-direction: column; gap: 1rem; }
+
+    .prompt-entry {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 1rem;
+    }
+    .prompt-entry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.6rem;
+    }
+    .prompt-number { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #58a6ff; }
+
+    .btn-remove {
+      background: none;
+      border: 1px solid #6e7681;
+      border-radius: 4px;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.55rem;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-remove:hover { border-color: #f78166; color: #f78166; }
+
+    .result-row { display: flex; gap: 1.5rem; margin-top: 0.75rem; align-items: center; }
+    .result-row span { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #8b949e; }
+    .radio-group { display: flex; gap: 1.25rem; }
+    .radio-label {
+      display: flex; align-items: center; gap: 0.4rem;
+      cursor: pointer; font-size: 0.85rem; color: #c9d1d9;
+      font-weight: 400; text-transform: none; letter-spacing: 0;
+    }
+    .radio-label input[type="radio"] { width: 15px; height: 15px; cursor: pointer; }
+    input[type="radio"].success-radio:checked { accent-color: #3fb950; }
+    input[type="radio"].fail-radio:checked    { accent-color: #f78166; }
+
+    /* ── Buttons ── */
+    .btn-add {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: none; border: 1px dashed #30363d; border-radius: 6px;
+      color: #58a6ff; cursor: pointer; font-size: 0.85rem;
+      padding: 0.65rem 1rem; margin-top: 1rem;
+      transition: border-color 0.15s, background 0.15s; width: 100%; justify-content: center;
+    }
+    .btn-add:hover { border-color: #58a6ff; background: rgba(88,166,255,0.05); }
+
+    .actions { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 0.5rem; flex-wrap: wrap; }
+
+    .btn-secondary {
+      background: none; border: 1px solid #30363d; border-radius: 6px;
+      color: #8b949e; cursor: pointer; font-size: 0.875rem; padding: 0.55rem 1.25rem;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-secondary:hover { border-color: #6e7681; color: #c9d1d9; }
+
+    .btn-primary {
+      background: #238636; border: 1px solid #2ea043; border-radius: 6px;
+      color: #fff; cursor: pointer; font-size: 0.875rem; font-weight: 600;
+      padding: 0.55rem 1.5rem; transition: background 0.15s;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-export {
+      background: #1f6feb; border: 1px solid #388bfd; border-radius: 6px;
+      color: #fff; cursor: pointer; font-size: 0.875rem; font-weight: 600;
+      padding: 0.55rem 1.5rem; transition: background 0.15s;
+    }
+    .btn-export:hover { background: #388bfd; }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: none;
+    }
+    .btn-primary.loading .spinner { display: block; }
+    .btn-primary.loading .btn-label { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      border-radius: 6px; color: #fff; font-size: 0.85rem;
+      padding: 0.65rem 1.25rem; opacity: 0;
+      transition: opacity 0.25s; pointer-events: none; z-index: 300;
+    }
+    #toast.show { opacity: 1; }
+    #toast.success { background: #238636; border: 1px solid #2ea043; }
+    #toast.error   { background: #b62324; border: 1px solid #f78166; }
+
+    @media (max-width: 600px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      header { flex-direction: column; gap: 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div>
+      <h1>OSINT Engagement Log</h1>
+      <p>Persona Interaction &amp; Prompt Injection Record</p>
+    </div>
+    <button class="btn-config" id="open-config-btn">&#9881; GitHub Config</button>
+  </header>
+
+  <!-- Status bar -->
+  <div id="status-bar">
+    <div class="status-dot warn" id="status-dot"></div>
+    <span id="status-text">GitHub not configured — entries will be saved locally only.</span>
+  </div>
+
+  <!-- Config Modal -->
+  <div class="modal-backdrop" id="config-modal">
+    <div class="modal">
+      <h2>&#9881; GitHub Configuration</h2>
+      <div class="modal-note">
+        Entries are committed directly to your repository as rows in <code>data/engagements.csv</code>.<br><br>
+        Create a <strong>fine-grained Personal Access Token</strong> with <strong>Contents: Read &amp; Write</strong>
+        permission scoped to this repository.<br>
+        <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">
+          github.com/settings/tokens
+        </a><br><br>
+        Your token is stored only in this browser's localStorage and never sent anywhere except the GitHub API.
+      </div>
+      <div class="field" style="margin-bottom:0.9rem;">
+        <label for="cfg-owner">GitHub Username / Org</label>
+        <input type="text" id="cfg-owner" placeholder="e.g. your-username">
+      </div>
+      <div class="field" style="margin-bottom:0.9rem;">
+        <label for="cfg-repo">Repository Name</label>
+        <input type="text" id="cfg-repo" placeholder="e.g. osint-engagement">
+      </div>
+      <div class="field" style="margin-bottom:0.9rem;">
+        <label for="cfg-branch">Branch</label>
+        <input type="text" id="cfg-branch" placeholder="main">
+      </div>
+      <div class="field">
+        <label for="cfg-token">Personal Access Token</label>
+        <input type="password" id="cfg-token" placeholder="github_pat_…">
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="close-config-btn">Cancel</button>
+        <button class="btn-primary" id="save-config-btn"><span class="btn-label">Save &amp; Verify</span><span class="spinner"></span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Form -->
+  <form id="engagement-form" autocomplete="off">
+
+    <div class="section">
+      <div class="section-title">Engagement Details</div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="engagement-datetime">Date &amp; Time of Engagement</label>
+          <input type="datetime-local" id="engagement-datetime" name="engagement_datetime" required>
+        </div>
+        <div class="field">
+          <label for="operator">Operator / Analyst</label>
+          <input type="text" id="operator" name="operator" placeholder="Initials or callsign">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Target Handles</div>
+      <div class="grid-3">
+        <div class="field">
+          <label for="reddit-handle">Reddit Handle</label>
+          <input type="text" id="reddit-handle" name="reddit_handle" placeholder="u/username">
+        </div>
+        <div class="field">
+          <label for="telegram-handle">Telegram Handle</label>
+          <input type="text" id="telegram-handle" name="telegram_handle" placeholder="@username">
+        </div>
+        <div class="field">
+          <label for="onlyfans-handle">OnlyFans Handle</label>
+          <input type="text" id="onlyfans-handle" name="onlyfans_handle" placeholder="@username">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Intelligence Gathered</div>
+      <div class="field" style="margin-bottom:1rem;">
+        <label for="persona-info">Telegram Persona Information Extracted</label>
+        <textarea id="persona-info" name="persona_info"
+          placeholder="Document persona details, backstory, behavioural patterns, or identifying information extracted during engagement…"></textarea>
+      </div>
+      <div class="field">
+        <label for="injection-techniques">Prompt Injection Techniques Attempted (summary)</label>
+        <textarea id="injection-techniques" name="injection_techniques"
+          placeholder="e.g. role-switch, jailbreak prefix, context overflow, instruction ignoring, delimiter injection…"></textarea>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Attempted Persona Override Prompts</div>
+      <div id="prompt-list"></div>
+      <button type="button" class="btn-add" id="add-prompt-btn">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm1 7V4.5a1 1 0 0 0-2 0V7H4.5a1 1 0 0 0 0 2H7v2.5a1 1 0 0 0 2 0V9h2.5a1 1 0 0 0 0-2H9z"/>
+        </svg>
+        Add Prompt Attempt
+      </button>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn-secondary" id="clear-btn">Clear Form</button>
+      <button type="button" class="btn-export" id="export-btn">Download CSV Row</button>
+      <button type="submit" class="btn-primary" id="submit-btn">
+        <span class="btn-label">Save to GitHub</span>
+        <span class="spinner"></span>
+      </button>
+    </div>
+
+  </form>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ── Config ──────────────────────────────────────────────── */
+const CFG_KEY = 'osint_gh_config';
+
+function loadConfig() {
+  try { return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; } catch { return {}; }
+}
+
+function saveConfig(cfg) {
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+}
+
+function applyConfigToUI(cfg) {
+  document.getElementById('cfg-owner').value  = cfg.owner  || '';
+  document.getElementById('cfg-repo').value   = cfg.repo   || '';
+  document.getElementById('cfg-branch').value = cfg.branch || 'main';
+  document.getElementById('cfg-token').value  = cfg.token  || '';
+}
+
+function updateStatusBar(cfg) {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (cfg.owner && cfg.repo && cfg.token) {
+    dot.className  = 'status-dot ok';
+    text.textContent = `Connected → ${cfg.owner}/${cfg.repo} (${cfg.branch || 'main'}) › data/engagements.csv`;
+  } else {
+    dot.className  = 'status-dot warn';
+    text.textContent = 'GitHub not configured — entries will be saved locally only.';
+  }
+}
+
+/* ── Config modal ────────────────────────────────────────── */
+document.getElementById('open-config-btn').addEventListener('click', () => {
+  applyConfigToUI(loadConfig());
+  document.getElementById('config-modal').classList.add('open');
+});
+document.getElementById('close-config-btn').addEventListener('click', () => {
+  document.getElementById('config-modal').classList.remove('open');
+});
+document.getElementById('config-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('config-modal'))
+    document.getElementById('config-modal').classList.remove('open');
+});
+
+document.getElementById('save-config-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('save-config-btn');
+  const cfg = {
+    owner:  document.getElementById('cfg-owner').value.trim(),
+    repo:   document.getElementById('cfg-repo').value.trim(),
+    branch: document.getElementById('cfg-branch').value.trim() || 'main',
+    token:  document.getElementById('cfg-token').value.trim(),
+  };
+  if (!cfg.owner || !cfg.repo || !cfg.token) {
+    showToast('Fill in all fields.', 'error'); return;
+  }
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+
+  try {
+    // Verify token by fetching repo info
+    const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`, {
+      headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' }
+    });
+    if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+
+    saveConfig(cfg);
+    updateStatusBar(cfg);
+    document.getElementById('config-modal').classList.remove('open');
+    showToast('GitHub connected successfully.', 'success');
+  } catch (err) {
+    showToast(`Verification failed: ${err.message}`, 'error');
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+});
+
+/* ── Prompt entries ──────────────────────────────────────── */
+let promptCount = 0;
+
+function addPrompt(text = '', result = '') {
+  promptCount++;
+  const idx  = promptCount;
+  const list = document.getElementById('prompt-list');
+  const entry = document.createElement('div');
+  entry.className  = 'prompt-entry';
+  entry.dataset.idx = idx;
+  entry.innerHTML = `
+    <div class="prompt-entry-header">
+      <span class="prompt-number">Attempt #${idx}</span>
+      <button type="button" class="btn-remove" data-idx="${idx}">Remove</button>
+    </div>
+    <textarea name="prompt_text_${idx}" placeholder="Paste or type the override prompt used…" rows="4">${escHtml(text)}</textarea>
+    <div class="result-row">
+      <span>Result:</span>
+      <div class="radio-group">
+        <label class="radio-label">
+          <input type="radio" class="success-radio" name="prompt_result_${idx}" value="successful" ${result==='successful'?'checked':''}>
+          Successful
+        </label>
+        <label class="radio-label">
+          <input type="radio" class="fail-radio" name="prompt_result_${idx}" value="unsuccessful" ${result==='unsuccessful'?'checked':''}>
+          Unsuccessful
+        </label>
+      </div>
+    </div>`;
+  list.appendChild(entry);
+  entry.querySelector('.btn-remove').addEventListener('click', () => {
+    entry.remove(); renumberPrompts();
+  });
+}
+
+function renumberPrompts() {
+  document.querySelectorAll('.prompt-entry').forEach((el, i) =>
+    el.querySelector('.prompt-number').textContent = `Attempt #${i + 1}`);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('add-prompt-btn').addEventListener('click', () => addPrompt());
+addPrompt();
+
+/* ── Collect form data ───────────────────────────────────── */
+function collectFormData() {
+  const fd = new FormData(document.getElementById('engagement-form'));
+  const prompts = [];
+  document.querySelectorAll('.prompt-entry').forEach(el => {
+    prompts.push({
+      text:   (fd.get(`prompt_text_${el.dataset.idx}`) || '').trim(),
+      result: fd.get(`prompt_result_${el.dataset.idx}`) || ''
+    });
+  });
+  return {
+    submitted_at:         new Date().toISOString(),
+    engagement_datetime:  fd.get('engagement_datetime')      || '',
+    operator:             (fd.get('operator')               || '').trim(),
+    reddit_handle:        (fd.get('reddit_handle')          || '').trim(),
+    telegram_handle:      (fd.get('telegram_handle')        || '').trim(),
+    onlyfans_handle:      (fd.get('onlyfans_handle')        || '').trim(),
+    persona_info:         (fd.get('persona_info')           || '').trim(),
+    injection_techniques: (fd.get('injection_techniques')   || '').trim(),
+    prompts
+  };
+}
+
+/* ── CSV helpers ─────────────────────────────────────────── */
+const CSV_PATH    = 'data/engagements.csv';
+const CSV_HEADERS = [
+  'submitted_at','engagement_datetime','operator',
+  'reddit_handle','telegram_handle','onlyfans_handle',
+  'persona_info','injection_techniques','prompts_json'
+];
+
+function csvEscape(val) {
+  const s = String(val ?? '');
+  return (s.includes(',') || s.includes('"') || s.includes('\n'))
+    ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function dataToRow(d) {
+  return CSV_HEADERS.map(h => {
+    if (h === 'prompts_json') return csvEscape(JSON.stringify(d.prompts));
+    return csvEscape(d[h]);
+  }).join(',');
+}
+
+/* ── GitHub API ──────────────────────────────────────────── */
+async function ghGet(path, token) {
+  const res = await fetch(`https://api.github.com/repos/${path}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }
+  });
+  return res;
+}
+
+async function commitCsvRow(cfg, newRow) {
+  const apiPath = `${cfg.owner}/${cfg.repo}/contents/${CSV_PATH}`;
+  const headers = {
+    Authorization: `Bearer ${cfg.token}`,
+    Accept: 'application/vnd.github+json',
+    'Content-Type': 'application/json'
+  };
+
+  // Try to fetch existing file
+  const getRes = await fetch(`https://api.github.com/repos/${apiPath}?ref=${cfg.branch}`, { headers });
+
+  let existingContent = CSV_HEADERS.join(',') + '\n';
+  let sha = undefined;
+
+  if (getRes.ok) {
+    const file = await getRes.json();
+    sha = file.sha;
+    existingContent = atob(file.content.replace(/\n/g, ''));
+  } else if (getRes.status !== 404) {
+    throw new Error(`GitHub API error ${getRes.status}`);
+  }
+
+  // Ensure content ends with newline before appending
+  if (!existingContent.endsWith('\n')) existingContent += '\n';
+  const updatedContent = existingContent + newRow + '\n';
+
+  const body = {
+    message: `log: add engagement ${new Date().toISOString().slice(0,10)}`,
+    content: btoa(unescape(encodeURIComponent(updatedContent))),
+    branch:  cfg.branch
+  };
+  if (sha) body.sha = sha;
+
+  const putRes = await fetch(`https://api.github.com/repos/${apiPath}`, {
+    method: 'PUT', headers, body: JSON.stringify(body)
+  });
+
+  if (!putRes.ok) {
+    const err = await putRes.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub PUT failed ${putRes.status}`);
+  }
+  return putRes;
+}
+
+/* ── Submit ──────────────────────────────────────────────── */
+document.getElementById('engagement-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const cfg = loadConfig();
+  const data = collectFormData();
+  const row  = dataToRow(data);
+
+  // Always save locally too
+  const localKey = `osint_local_${Date.now()}`;
+  localStorage.setItem(localKey, JSON.stringify(data));
+
+  if (!cfg.owner || !cfg.repo || !cfg.token) {
+    showToast('Saved locally (GitHub not configured).', 'success');
+    return;
+  }
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+
+  try {
+    await commitCsvRow(cfg, row);
+    showToast('Entry committed to GitHub CSV.', 'success');
+  } catch (err) {
+    showToast(`GitHub error: ${err.message}`, 'error');
+    console.error(err);
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+});
+
+/* ── Clear form ──────────────────────────────────────────── */
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (!confirm('Clear all fields?')) return;
+  document.getElementById('engagement-form').reset();
+  document.getElementById('prompt-list').innerHTML = '';
+  promptCount = 0;
+  addPrompt();
+});
+
+/* ── Download CSV row ────────────────────────────────────── */
+document.getElementById('export-btn').addEventListener('click', () => {
+  const data = collectFormData();
+  const csv  = CSV_HEADERS.join(',') + '\n' + dataToRow(data) + '\n';
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `engagement_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ── Toast ───────────────────────────────────────────────── */
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = ''; }, 3000);
+}
+
+/* ── Init ────────────────────────────────────────────────── */
+updateStatusBar(loadConfig());
+</script>
+</body>
+</html>
