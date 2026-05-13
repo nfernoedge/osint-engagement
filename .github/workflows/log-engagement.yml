@@ -1,0 +1,64 @@
+name: Log Engagement Entry
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: 'Serialised engagement data (JSON)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  append-row:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Append row to CSV
+        env:
+          PAYLOAD: ${{ inputs.payload }}
+        run: |
+          python3 - << 'PYEOF'
+          import json, csv, os
+
+          data   = json.loads(os.environ['PAYLOAD'])
+          path   = 'data/engagements.csv'
+          fields = [
+              'submitted_at', 'engagement_datetime', 'operator',
+              'reddit_handle', 'telegram_handle', 'onlyfans_handle',
+              'persona_info', 'injection_techniques', 'prompts_json'
+          ]
+
+          needs_header = not os.path.exists(path) or os.path.getsize(path) == 0
+
+          with open(path, 'a', newline='', encoding='utf-8') as fh:
+              w = csv.DictWriter(fh, fieldnames=fields)
+              if needs_header:
+                  w.writeheader()
+              w.writerow({
+                  'submitted_at':         data.get('submitted_at', ''),
+                  'engagement_datetime':  data.get('engagement_datetime', ''),
+                  'operator':             data.get('operator', ''),
+                  'reddit_handle':        data.get('reddit_handle', ''),
+                  'telegram_handle':      data.get('telegram_handle', ''),
+                  'onlyfans_handle':      data.get('onlyfans_handle', ''),
+                  'persona_info':         data.get('persona_info', ''),
+                  'injection_techniques': data.get('injection_techniques', ''),
+                  'prompts_json':         json.dumps(data.get('prompts', [])),
+              })
+          PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add data/engagements.csv
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+          git commit -m "log: engagement $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git pull --rebase origin ${{ github.ref_name }}
+          git push origin ${{ github.ref_name }}

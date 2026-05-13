@@ -279,16 +279,17 @@
     <div class="modal">
       <h2>&#9881; GitHub Configuration</h2>
       <div class="modal-note">
-        Entries are committed directly to your repository as rows in <code>data/engagements.csv</code>.<br><br>
-        <strong>Recommended:</strong> create a <strong>classic Personal Access Token</strong> with the
-        <strong><code>repo</code></strong> scope — this is the most reliable option.<br>
-        <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener">
-          github.com/settings/tokens/new
-        </a><br><br>
-        Fine-grained tokens also work (<strong>Contents: Read &amp; Write</strong>) but will fail silently
-        if the repository is under an <strong>organisation that hasn't opted in</strong> to fine-grained PAT access
-        (org Settings → Third-party Access → Personal access tokens).<br><br>
-        Your token is stored only in this browser's localStorage and never sent anywhere except the GitHub API.
+        Submitting triggers a <strong>GitHub Actions workflow</strong> that appends the row to
+        <code>data/engagements.csv</code> using the repo's built-in write token.
+        The CSV will be updated within ~30 seconds of each submission.<br><br>
+        The token you provide here only needs permission to <strong>trigger workflows</strong> —
+        it never writes files directly, which avoids the common PAT permissions errors.<br><br>
+        <strong>Create a Personal Access Token:</strong><br>
+        &bull; <strong>Classic PAT</strong> (simplest) — tick the <code>repo</code> scope<br>
+        &nbsp;&nbsp;<a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener">github.com/settings/tokens/new</a><br>
+        &bull; <strong>Fine-grained PAT</strong> — set <em>Actions: Read and write</em>; no Contents permission needed<br>
+        &nbsp;&nbsp;<a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens?type=beta</a><br><br>
+        Your token is stored only in this browser's localStorage.
       </div>
       <div class="field" style="margin-bottom:0.9rem;">
         <label for="cfg-owner">GitHub Username / Org</label>
@@ -449,27 +450,40 @@ document.getElementById('save-config-btn').addEventListener('click', async () =>
   try {
     const ghHeaders = { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' };
 
-    // Step 1 — confirm the repo exists and the token can see it
+    // Step 1 — confirm the repo exists
     const repoRes = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`, { headers: ghHeaders });
     if (!repoRes.ok) {
       const body = await repoRes.json().catch(() => ({}));
-      throw new Error(`Repo check failed (${repoRes.status}): ${body.message || 'unknown error'}`);
+      throw new Error(`Repo not found (${repoRes.status}): ${body.message || 'check owner/repo name'}`);
     }
 
-    // Step 2 — test read access to the CSV path (404 is fine — file may not exist yet)
-    const fileRes = await fetch(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${CSV_PATH}?ref=${cfg.branch}`,
+    // Step 2 — confirm the workflow file has been pushed to the repo
+    const wfRes = await fetch(
+      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/.github/workflows/log-engagement.yml?ref=${cfg.branch}`,
       { headers: ghHeaders }
     );
-    if (!fileRes.ok && fileRes.status !== 404) {
-      const body = await fileRes.json().catch(() => ({}));
-      throw new Error(`Contents access failed (${fileRes.status}): ${body.message || 'check token scopes and org PAT settings'}`);
+    if (wfRes.status === 404) {
+      throw new Error('Workflow file not found — push the repository code to GitHub first, then re-verify.');
+    }
+    if (!wfRes.ok) {
+      const body = await wfRes.json().catch(() => ({}));
+      throw new Error(`Workflow check failed (${wfRes.status}): ${body.message}`);
+    }
+
+    // Step 3 — test the token can list workflow runs (confirms Actions read access)
+    const actRes = await fetch(
+      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/actions/workflows`,
+      { headers: ghHeaders }
+    );
+    if (!actRes.ok) {
+      const body = await actRes.json().catch(() => ({}));
+      throw new Error(`Actions access failed (${actRes.status}): ${body.message || 'token needs Actions: Read and write or repo scope'}`);
     }
 
     saveConfig(cfg);
     updateStatusBar(cfg);
     document.getElementById('config-modal').classList.remove('open');
-    showToast('GitHub connected and write access verified.', 'success');
+    showToast('GitHub connected — workflow found and Actions access confirmed.', 'success');
   } catch (err) {
     showToast(`Verification failed: ${err.message}`, 'error');
   } finally {
@@ -570,69 +584,39 @@ function dataToRow(d) {
 }
 
 /* ── GitHub API ──────────────────────────────────────────── */
-async function ghGet(path, token) {
-  const res = await fetch(`https://api.github.com/repos/${path}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }
-  });
-  return res;
-}
+const WORKFLOW_FILE = 'log-engagement.yml';
 
-async function commitCsvRow(cfg, newRow) {
-  const apiPath = `${cfg.owner}/${cfg.repo}/contents/${CSV_PATH}`;
-  const headers = {
-    Authorization: `Bearer ${cfg.token}`,
-    Accept: 'application/vnd.github+json',
-    'Content-Type': 'application/json'
-  };
+async function dispatchWorkflow(cfg, data) {
+  const res = await fetch(
+    `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${cfg.token}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ref:    cfg.branch,
+        inputs: { payload: JSON.stringify(data) }
+      })
+    }
+  );
 
-  // Try to fetch existing file
-  const getRes = await fetch(`https://api.github.com/repos/${apiPath}?ref=${cfg.branch}`, { headers });
-
-  let existingContent = CSV_HEADERS.join(',') + '\n';
-  let sha = undefined;
-
-  if (getRes.ok) {
-    const file = await getRes.json();
-    sha = file.sha;
-    existingContent = atob(file.content.replace(/\n/g, ''));
-  } else if (getRes.status !== 404) {
-    const body = await getRes.json().catch(() => ({}));
-    throw new Error(`Read failed (${getRes.status}): ${body.message || 'check token scopes'}`);
-  }
-
-  // Ensure content ends with newline before appending
-  if (!existingContent.endsWith('\n')) existingContent += '\n';
-  const updatedContent = existingContent + newRow + '\n';
-
-  const body = {
-    message: `log: add engagement ${new Date().toISOString().slice(0,10)}`,
-    content: btoa(unescape(encodeURIComponent(updatedContent))),
-    branch:  cfg.branch
-  };
-  if (sha) body.sha = sha;
-
-  const putRes = await fetch(`https://api.github.com/repos/${apiPath}`, {
-    method: 'PUT', headers, body: JSON.stringify(body)
-  });
-
-  if (!putRes.ok) {
-    const err = await putRes.json().catch(() => ({}));
-    throw new Error(`Write failed (${putRes.status}): ${err.message || 'check token scopes'}`);
-  }
-  return putRes;
+  if (res.status === 204) return; // success — no body
+  const err = await res.json().catch(() => ({}));
+  throw new Error(`Dispatch failed (${res.status}): ${err.message || 'check token has Actions: Read and write or repo scope'}`);
 }
 
 /* ── Submit ──────────────────────────────────────────────── */
 document.getElementById('engagement-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const btn = document.getElementById('submit-btn');
-  const cfg = loadConfig();
+  const btn  = document.getElementById('submit-btn');
+  const cfg  = loadConfig();
   const data = collectFormData();
-  const row  = dataToRow(data);
 
-  // Always save locally too
-  const localKey = `osint_local_${Date.now()}`;
-  localStorage.setItem(localKey, JSON.stringify(data));
+  // Always save locally as a fallback
+  localStorage.setItem(`osint_local_${Date.now()}`, JSON.stringify(data));
 
   if (!cfg.owner || !cfg.repo || !cfg.token) {
     showToast('Saved locally (GitHub not configured).', 'success');
@@ -643,10 +627,10 @@ document.getElementById('engagement-form').addEventListener('submit', async (e) 
   btn.disabled = true;
 
   try {
-    await commitCsvRow(cfg, row);
-    showToast('Entry committed to GitHub CSV.', 'success');
+    await dispatchWorkflow(cfg, data);
+    showToast('Queued — CSV will update in ~30 s via GitHub Actions.', 'success');
   } catch (err) {
-    showToast(`GitHub error: ${err.message}`, 'error');
+    showToast(`${err.message}`, 'error');
     console.error(err);
   } finally {
     btn.classList.remove('loading');

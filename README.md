@@ -4,41 +4,66 @@ A static GitHub Pages form for logging persona interactions and prompt injection
 
 ---
 
+## How it works
+
+Submitting the form triggers a **GitHub Actions workflow** (`log-engagement.yml`) via the `workflow_dispatch` API. The workflow runs on GitHub's servers, appends the new row to `data/engagements.csv` using the repository's built-in write token, and commits the result. The CSV is updated within ~30 seconds of each submission.
+
+This avoids the PAT `contents: write` permission issues that affect direct browser-to-API file writes.
+
+---
+
 ## Setup
 
-### 1. Fork or create this repository
+### 1. Create a new repository on GitHub
 
-Create a new repository on GitHub (can be private) and push this code to it.
+Create a repository (can be private) — do **not** initialise it with a README or any files.
 
-### 2. Enable GitHub Pages
+### 2. Push this code
+
+```bash
+cd osint-engagement
+git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPO.git
+git branch -M main
+git push -u origin main
+```
+
+### 3. Enable GitHub Pages
 
 1. Go to **Settings → Pages**
 2. Set **Source** to `Deploy from a branch`
 3. Set **Branch** to `main` / `root`
 4. Save — your form will be live at `https://<username>.github.io/<repo>/`
 
-### 3. Create a Personal Access Token
+### 4. Create a Personal Access Token
 
+**Option A — Classic PAT (simplest):**
+1. Go to [github.com/settings/tokens/new](https://github.com/settings/tokens/new)
+2. Tick the **`repo`** scope
+3. Generate and copy the token
+
+**Option B — Fine-grained PAT:**
 1. Go to [github.com/settings/tokens?type=beta](https://github.com/settings/tokens?type=beta)
 2. Click **Generate new token (fine-grained)**
 3. Set **Repository access** to this repository only
-4. Under **Permissions → Repository permissions**, set **Contents** to **Read and Write**
+4. Under **Permissions → Repository permissions**, set **Actions** to **Read and write**
+   - `Contents` permission is **not needed** — the workflow uses the built-in `GITHUB_TOKEN`
 5. Generate and copy the token
 
-### 4. Configure the form
+### 5. Configure the form
 
 1. Open the hosted form in your browser
 2. Click **⚙ GitHub Config** (top right)
 3. Enter your GitHub username, repository name, branch (`main`), and the token
-4. Click **Save & Verify** — the status bar will turn green when connected
+4. Click **Save & Verify** — the status bar will turn green when the workflow file is detected
 
 ---
 
 ## Usage
 
-- Fill in the engagement details and submit — the row is appended to `data/engagements.csv` as a single git commit
-- Use **Download CSV Row** to save a local copy of an entry without committing
+- Fill in the engagement details and submit — a GitHub Actions run is triggered and the row is appended to `data/engagements.csv` within ~30 seconds
+- Use **Download CSV Row** to save an immediate local copy of any entry
 - Entries are also saved to browser `localStorage` as a fallback
+- Monitor runs at `https://github.com/YOUR-USERNAME/YOUR-REPO/actions`
 - The `prompts_json` column stores all prompt attempts as a JSON array: `[{"text":"...","result":"successful|unsuccessful"}, ...]`
 
 ---
