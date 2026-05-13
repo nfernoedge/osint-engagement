@@ -280,11 +280,14 @@
       <h2>&#9881; GitHub Configuration</h2>
       <div class="modal-note">
         Entries are committed directly to your repository as rows in <code>data/engagements.csv</code>.<br><br>
-        Create a <strong>fine-grained Personal Access Token</strong> with <strong>Contents: Read &amp; Write</strong>
-        permission scoped to this repository.<br>
-        <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">
-          github.com/settings/tokens
+        <strong>Recommended:</strong> create a <strong>classic Personal Access Token</strong> with the
+        <strong><code>repo</code></strong> scope — this is the most reliable option.<br>
+        <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener">
+          github.com/settings/tokens/new
         </a><br><br>
+        Fine-grained tokens also work (<strong>Contents: Read &amp; Write</strong>) but will fail silently
+        if the repository is under an <strong>organisation that hasn't opted in</strong> to fine-grained PAT access
+        (org Settings → Third-party Access → Personal access tokens).<br><br>
         Your token is stored only in this browser's localStorage and never sent anywhere except the GitHub API.
       </div>
       <div class="field" style="margin-bottom:0.9rem;">
@@ -444,16 +447,29 @@ document.getElementById('save-config-btn').addEventListener('click', async () =>
   btn.disabled = true;
 
   try {
-    // Verify token by fetching repo info
-    const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`, {
-      headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' }
-    });
-    if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+    const ghHeaders = { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' };
+
+    // Step 1 — confirm the repo exists and the token can see it
+    const repoRes = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`, { headers: ghHeaders });
+    if (!repoRes.ok) {
+      const body = await repoRes.json().catch(() => ({}));
+      throw new Error(`Repo check failed (${repoRes.status}): ${body.message || 'unknown error'}`);
+    }
+
+    // Step 2 — test read access to the CSV path (404 is fine — file may not exist yet)
+    const fileRes = await fetch(
+      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${CSV_PATH}?ref=${cfg.branch}`,
+      { headers: ghHeaders }
+    );
+    if (!fileRes.ok && fileRes.status !== 404) {
+      const body = await fileRes.json().catch(() => ({}));
+      throw new Error(`Contents access failed (${fileRes.status}): ${body.message || 'check token scopes and org PAT settings'}`);
+    }
 
     saveConfig(cfg);
     updateStatusBar(cfg);
     document.getElementById('config-modal').classList.remove('open');
-    showToast('GitHub connected successfully.', 'success');
+    showToast('GitHub connected and write access verified.', 'success');
   } catch (err) {
     showToast(`Verification failed: ${err.message}`, 'error');
   } finally {
@@ -580,7 +596,8 @@ async function commitCsvRow(cfg, newRow) {
     sha = file.sha;
     existingContent = atob(file.content.replace(/\n/g, ''));
   } else if (getRes.status !== 404) {
-    throw new Error(`GitHub API error ${getRes.status}`);
+    const body = await getRes.json().catch(() => ({}));
+    throw new Error(`Read failed (${getRes.status}): ${body.message || 'check token scopes'}`);
   }
 
   // Ensure content ends with newline before appending
@@ -600,7 +617,7 @@ async function commitCsvRow(cfg, newRow) {
 
   if (!putRes.ok) {
     const err = await putRes.json().catch(() => ({}));
-    throw new Error(err.message || `GitHub PUT failed ${putRes.status}`);
+    throw new Error(`Write failed (${putRes.status}): ${err.message || 'check token scopes'}`);
   }
   return putRes;
 }
