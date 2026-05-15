@@ -18,6 +18,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0   # need full history to switch branches
+
+      # Write to a dedicated `data` branch so commits never touch `main`
+      # and GitHub Pages deployments are never re-triggered.
+      - name: Switch to data branch (create orphan if missing)
+        run: |
+          git fetch origin data 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/data; then
+            git checkout -B data origin/data
+          else
+            git checkout --orphan data
+            git rm -rf . --quiet 2>/dev/null || true
+            mkdir -p data
+            printf 'submitted_at,engagement_datetime,operator,reddit_handle,telegram_handle,onlyfans_handle,persona_info,injection_techniques,prompts_json\n' \
+              > data/engagements.csv
+          fi
 
       - name: Append row to CSV
         env:
@@ -53,12 +69,12 @@ jobs:
               })
           PYEOF
 
-      - name: Commit and push
+      - name: Commit and push to data branch
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add data/engagements.csv
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "log: engagement $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git pull --rebase origin ${{ github.ref_name }}
-          git push origin ${{ github.ref_name }}
+          git pull --rebase origin data 2>/dev/null || true
+          git push origin data

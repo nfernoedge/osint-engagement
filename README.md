@@ -8,6 +8,13 @@ A static GitHub Pages form for logging persona interactions and prompt injection
 
 Submitting the form triggers a **GitHub Actions workflow** (`log-engagement.yml`) via the `workflow_dispatch` API. The workflow runs on GitHub's servers, appends the new row to `data/engagements.csv` using the repository's built-in write token, and commits the result. The CSV is updated within ~30 seconds of each submission.
 
+Crucially, the workflow commits to a dedicated **`data` branch**, not `main`. This means GitHub Pages (which deploys from `main`) is never re-triggered by a form submission — the live site stays up and undisturbed.
+
+| Branch | Purpose |
+|---|---|
+| `main` | Source for GitHub Pages — the form lives here |
+| `data` | CSV storage only — created automatically on first submission |
+
 This avoids the PAT `contents: write` permission issues that affect direct browser-to-API file writes.
 
 ---
@@ -63,8 +70,11 @@ git push -u origin main
 - Fill in the engagement details and submit — a GitHub Actions run is triggered and the row is appended to `data/engagements.csv` within ~30 seconds
 - Use **Download CSV Row** to save an immediate local copy of any entry
 - Entries are also saved to browser `localStorage` as a fallback
-- Monitor runs at `https://github.com/YOUR-USERNAME/YOUR-REPO/actions`
+- Monitor workflow runs at `https://github.com/YOUR-USERNAME/YOUR-REPO/actions`
+- Download the full CSV at any time from the `data` branch:
+  `https://raw.githubusercontent.com/YOUR-USERNAME/YOUR-REPO/data/data/engagements.csv`
 - The `prompts_json` column stores all prompt attempts as a JSON array: `[{"text":"...","result":"successful|unsuccessful"}, ...]`
+- GitHub Pages remains deployed from `main` — form submissions never cause a re-deployment
 
 ---
 
