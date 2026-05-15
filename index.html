@@ -277,35 +277,20 @@
   <!-- Config Modal -->
   <div class="modal-backdrop" id="config-modal">
     <div class="modal">
-      <h2>&#9881; GitHub Configuration</h2>
+      <h2>&#9881; Submission Configuration</h2>
       <div class="modal-note">
-        Submitting triggers a <strong>GitHub Actions workflow</strong> that appends the row to
-        <code>data/engagements.csv</code> using the repo's built-in write token.
-        The CSV will be updated within ~30 seconds of each submission.<br><br>
-        The token you provide here only needs permission to <strong>trigger workflows</strong> —
-        it never writes files directly, which avoids the common PAT permissions errors.<br><br>
-        <strong>Create a Personal Access Token:</strong><br>
-        &bull; <strong>Classic PAT</strong> (simplest) — tick the <code>repo</code> scope<br>
-        &nbsp;&nbsp;<a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener">github.com/settings/tokens/new</a><br>
-        &bull; <strong>Fine-grained PAT</strong> — set <em>Actions: Read and write</em>; no Contents permission needed<br>
-        &nbsp;&nbsp;<a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens?type=beta</a><br><br>
-        Your token is stored only in this browser's localStorage.
+        Entries are submitted through a secure proxy — no GitHub token is ever stored in your browser
+        or shared with operators.<br><br>
+        Ask your administrator for the <strong>Worker URL</strong> and <strong>Submit Key</strong>.
+        These are stored only in this browser's localStorage.
       </div>
       <div class="field" style="margin-bottom:0.9rem;">
-        <label for="cfg-owner">GitHub Username / Org</label>
-        <input type="text" id="cfg-owner" placeholder="e.g. your-username">
-      </div>
-      <div class="field" style="margin-bottom:0.9rem;">
-        <label for="cfg-repo">Repository Name</label>
-        <input type="text" id="cfg-repo" placeholder="e.g. osint-engagement">
-      </div>
-      <div class="field" style="margin-bottom:0.9rem;">
-        <label for="cfg-branch">Branch</label>
-        <input type="text" id="cfg-branch" placeholder="main">
+        <label for="cfg-worker-url">Worker URL</label>
+        <input type="text" id="cfg-worker-url" placeholder="https://your-worker.workers.dev">
       </div>
       <div class="field">
-        <label for="cfg-token">Personal Access Token</label>
-        <input type="password" id="cfg-token" placeholder="github_pat_…">
+        <label for="cfg-submit-key">Submit Key</label>
+        <input type="password" id="cfg-submit-key" placeholder="passphrase given by your administrator">
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="close-config-btn">Cancel</button>
@@ -401,21 +386,19 @@ function saveConfig(cfg) {
 }
 
 function applyConfigToUI(cfg) {
-  document.getElementById('cfg-owner').value  = cfg.owner  || '';
-  document.getElementById('cfg-repo').value   = cfg.repo   || '';
-  document.getElementById('cfg-branch').value = cfg.branch || 'main';
-  document.getElementById('cfg-token').value  = cfg.token  || '';
+  document.getElementById('cfg-worker-url').value  = cfg.workerUrl  || '';
+  document.getElementById('cfg-submit-key').value  = cfg.submitKey  || '';
 }
 
 function updateStatusBar(cfg) {
   const dot  = document.getElementById('status-dot');
   const text = document.getElementById('status-text');
-  if (cfg.owner && cfg.repo && cfg.token) {
-    dot.className  = 'status-dot ok';
-    text.textContent = `Connected → ${cfg.owner}/${cfg.repo} (${cfg.branch || 'main'}) › data/engagements.csv`;
+  if (cfg.workerUrl && cfg.submitKey) {
+    dot.className    = 'status-dot ok';
+    text.textContent = `Connected → ${cfg.workerUrl}`;
   } else {
-    dot.className  = 'status-dot warn';
-    text.textContent = 'GitHub not configured — entries will be saved locally only.';
+    dot.className    = 'status-dot warn';
+    text.textContent = 'Not configured — entries will be saved locally only. Click ⚙ to configure.';
   }
 }
 
@@ -434,56 +417,39 @@ document.getElementById('config-modal').addEventListener('click', (e) => {
 
 document.getElementById('save-config-btn').addEventListener('click', async () => {
   const btn = document.getElementById('save-config-btn');
-  const cfg = {
-    owner:  document.getElementById('cfg-owner').value.trim(),
-    repo:   document.getElementById('cfg-repo').value.trim(),
-    branch: document.getElementById('cfg-branch').value.trim() || 'main',
-    token:  document.getElementById('cfg-token').value.trim(),
-  };
-  if (!cfg.owner || !cfg.repo || !cfg.token) {
-    showToast('Fill in all fields.', 'error'); return;
-  }
-
   btn.classList.add('loading');
   btn.disabled = true;
 
   try {
-    const ghHeaders = { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' };
+    const cfg = {
+      workerUrl: document.getElementById('cfg-worker-url').value.trim().replace(/\/$/, ''),
+      submitKey: document.getElementById('cfg-submit-key').value.trim(),
+    };
 
-    // Step 1 — confirm the repo exists
-    const repoRes = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`, { headers: ghHeaders });
-    if (!repoRes.ok) {
-      const body = await repoRes.json().catch(() => ({}));
-      throw new Error(`Repo not found (${repoRes.status}): ${body.message || 'check owner/repo name'}`);
-    }
-
-    // Step 2 — confirm the workflow file has been pushed to the repo
-    const wfRes = await fetch(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/.github/workflows/log-engagement.yml?ref=${cfg.branch}`,
-      { headers: ghHeaders }
-    );
-    if (wfRes.status === 404) {
-      throw new Error('Workflow file not found — push the repository code to GitHub first, then re-verify.');
-    }
-    if (!wfRes.ok) {
-      const body = await wfRes.json().catch(() => ({}));
-      throw new Error(`Workflow check failed (${wfRes.status}): ${body.message}`);
+    if (!cfg.workerUrl || !cfg.submitKey) {
+      showToast('Fill in both fields.', 'error');
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      return;
     }
 
-    // Step 3 — test the token can list workflow runs (confirms Actions read access)
-    const actRes = await fetch(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/actions/workflows`,
-      { headers: ghHeaders }
-    );
-    if (!actRes.ok) {
-      const body = await actRes.json().catch(() => ({}));
-      throw new Error(`Actions access failed (${actRes.status}): ${body.message || 'token needs Actions: Read and write or repo scope'}`);
-    }
+    // Send a test ping to the worker
+    const res = await fetch(cfg.workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submitKey: cfg.submitKey, ping: true }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 401) throw new Error('Submit key rejected — check the passphrase.');
+    if (!res.ok && res.status !== 422) throw new Error(data.error || `Worker returned ${res.status}`);
+    // 422 = ping recognised but no payload — that's fine, means auth passed
 
     saveConfig(cfg);
     updateStatusBar(cfg);
     document.getElementById('config-modal').classList.remove('open');
-    showToast('GitHub connected — workflow found and Actions access confirmed.', 'success');
+    showToast('Connected — submit key accepted.', 'success');
   } catch (err) {
     showToast(`Verification failed: ${err.message}`, 'error');
   } finally {
@@ -583,29 +549,18 @@ function dataToRow(d) {
   }).join(',');
 }
 
-/* ── GitHub API ──────────────────────────────────────────── */
-const WORKFLOW_FILE = 'log-engagement.yml';
+/* ── Worker proxy ────────────────────────────────────────── */
+async function submitViaWorker(cfg, payload) {
+  const res = await fetch(cfg.workerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ submitKey: cfg.submitKey, payload }),
+  });
 
-async function dispatchWorkflow(cfg, data) {
-  const res = await fetch(
-    `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${cfg.token}`,
-        Accept: 'application/vnd.github+json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        ref:    cfg.branch,
-        inputs: { payload: JSON.stringify(data) }
-      })
-    }
-  );
-
-  if (res.status === 204) return; // success — no body
+  if (res.ok) return;
   const err = await res.json().catch(() => ({}));
-  throw new Error(`Dispatch failed (${res.status}): ${err.message || 'check token has Actions: Read and write or repo scope'}`);
+  if (res.status === 401) throw new Error('Submit key rejected.');
+  throw new Error(err.error || `Worker error ${res.status}`);
 }
 
 /* ── Submit ──────────────────────────────────────────────── */
@@ -618,8 +573,8 @@ document.getElementById('engagement-form').addEventListener('submit', async (e) 
   // Always save locally as a fallback
   localStorage.setItem(`osint_local_${Date.now()}`, JSON.stringify(data));
 
-  if (!cfg.owner || !cfg.repo || !cfg.token) {
-    showToast('Saved locally (GitHub not configured).', 'success');
+  if (!cfg.workerUrl || !cfg.submitKey) {
+    showToast('Saved locally — configure the Worker URL and Submit Key to sync.', 'success');
     return;
   }
 
@@ -627,7 +582,7 @@ document.getElementById('engagement-form').addEventListener('submit', async (e) 
   btn.disabled = true;
 
   try {
-    await dispatchWorkflow(cfg, data);
+    await submitViaWorker(cfg, data);
     showToast('Queued — CSV will update in ~30 s via GitHub Actions.', 'success');
   } catch (err) {
     showToast(`${err.message}`, 'error');
