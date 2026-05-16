@@ -422,7 +422,7 @@ document.getElementById('save-config-btn').addEventListener('click', async () =>
 
   try {
     const cfg = {
-      workerUrl: document.getElementById('cfg-worker-url').value.trim().replace(/\/$/, ''),
+      workerUrl: (document.getElementById('cfg-worker-url').value.trim().replace(/\/$/, '')).replace(/^(?!https?:\/\/)/, 'https://'),
       submitKey: document.getElementById('cfg-submit-key').value.trim(),
     };
 
